@@ -41,11 +41,11 @@ function sendBuffer(res: ServerResponse, status: number, contentType: string, bo
   res.end(body);
 }
 
-function pathOf(req: IncomingMessage): string {
+function pathOf(req: IncomingMessage): URL {
   try {
-    return new URL(req.url ?? '/', 'http://entry').pathname;
+    return new URL(req.url ?? '/', 'http://entry');
   } catch {
-    return '/';
+    return new URL('/', 'http://entry');
   }
 }
 
@@ -77,9 +77,9 @@ function repoSegs(path: string): { owner: string; repo: string; rest: string } |
 
 export function createApp(): Server {
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const path = pathOf(req);
+    const url = pathOf(req);
+    const path = url.pathname;
     const method = (req.method ?? 'GET').toUpperCase();
-    const url = new URL(req.url ?? '/', 'http://entry');
     try {
       // Lifecycle: the boot probe. No auth.
       if (method === 'GET' && path === '/healthz') {

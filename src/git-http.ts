@@ -102,6 +102,10 @@ function v0Advertisement(store: Store, repo: Repo, service: 'git-upload-pack' | 
   return adv;
 }
 
+/** Prebuilt v0 upload-pack advertisement header (service line + flush): constant bytes. */
+const V0_UPLOAD_HEADER = Buffer.concat([encodePktLines(['# service=git-upload-pack\n']), Buffer.from('0000')]);
+const V0_RECEIVE_HEADER = Buffer.concat([encodePktLines(['# service=git-receive-pack\n']), Buffer.from('0000')]);
+
 function v2Advertisement(): Buffer {
   const caps = [
     'version 2',
@@ -489,8 +493,7 @@ export function handleGitRequest(req: GitRequest): GitResponse | null {
       status: 200,
       contentType: `application/x-${service}-advertisement`,
       body: Buffer.concat([
-        encodePktLines([`# service=${service}\n`]),
-        Buffer.from('0000'),
+        service === 'git-upload-pack' ? V0_UPLOAD_HEADER : V0_RECEIVE_HEADER,
         v0Advertisement(store, repo, service),
       ]),
     };
