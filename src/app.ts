@@ -16,7 +16,13 @@ const store = new Store(VIEWER);
 let expectedToken: string | null = null;
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
-  const text = body === null || body === undefined ? '' : `${JSON.stringify(body)}\n`;
+  // A cached exact response string (the issue cache's) is reused verbatim; anything else is
+  // serialized as before.
+  const text = body === null || body === undefined
+    ? ''
+    : typeof body === 'object' && body !== null && '_cachedJson' in (body as Record<string, unknown>)
+      ? ((body as Record<string, unknown>)._cachedJson as string)
+      : `${JSON.stringify(body)}\n`;
   res.writeHead(status, {
     'content-type': JSON_TYPE,
     ...(text !== '' ? { 'content-length': Buffer.byteLength(text) } : {}),
@@ -163,7 +169,7 @@ export function createApp(): Server {
             return;
           }
           const protocolVersion = (req.headers['git-protocol'] ?? undefined) as string | undefined;
-          const gitRes = await handleGitRequest({
+          const gitRes = handleGitRequest({
             store, repo, service, isInfoRefs,
             protocolVersion: protocolVersion === 'version=2' ? '2' : protocolVersion,
             body,

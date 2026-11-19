@@ -1,6 +1,6 @@
 // Git object model + packfile reader/writer (Node stdlib only).
 import { createHash } from 'node:crypto';
-import { createInflate, deflateSync, inflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 export type ObjectType = 'commit' | 'tree' | 'blob' | 'tag';
 export const ZERO_OID = '0'.repeat(40);
@@ -109,25 +109,36 @@ export function parseTag(data: Buffer): ParsedTag {
 }
 
 /** Inflate one zlib stream starting at `offset` and report the exact compressed length. */
-async function inflateStreamAt(buf: Buffer, offset: number): Promise<{ data: Buffer; end: number }> {
-  // A streaming Inflate stops exactly at the zlib stream end; bytesRead is how many compressed
-  // bytes it consumed. One pass, no probing: the next object's header starts at offset + end.
-  return await new Promise((resolve, reject) => {
-    const inflater = createInflate();
-    const chunks: Buffer[] = [];
-    inflater.on('data', (c: Buffer) => chunks.push(c));
-    inflater.on('end', () => resolve({ data: Buffer.concat(chunks), end: inflater.bytesRead }));
-    inflater.on('error', reject);
-    inflater.write(buf.subarray(offset));
-    inflater.end();
-  });
+function inflateStreamAt(buf: Buffer, offset: number): { data: Buffer; end: number } {
+  // One sync inflate of the whole tail gives the payload; zlib streams tolerate trailing garbage,
+  // so the exact end is pinned by verifying the adler32 trailer that follows the stream: scan a
+  // short window from the expected end for a trailer whose checksum matches the payload. This is
+  // one inflate per object instead of a binary search of them.
+  const data = inflateSync(buf.subarray(offset));
+  const n = data.length;
+  // The adler32 of `data` as a big-endian uint32.
+  let a = 1;
+  let b = 0;
+  for (let i = 0; i < n; i += 1) {
+    a = (a + data[i]) % 65521;
+    b = (b + a) % 65521;
+  }
+  const want = ((b << 16) | a) >>> 0;
+  // The compressed length is unknown before inflating, so scan the remaining bytes for the 4-byte
+  // adler trailer with Buffer.indexOf (a memchr-fast scan over the pack's tail). The first match
+  // after the 2-byte header is the stream's own trailer: the stream cannot end later than the
+  // next object's header, and a collision there is astronomically unlikely.
+  const trailer = Buffer.from([want >>> 24 & 255, (want >>> 16) & 255, (want >>> 8) & 255, want & 255]);
+  const at = buf.indexOf(trailer, offset + 2);
+  if (at === -1) throw new Error(`zlib stream at ${offset}: adler32 trailer not found`);
+  return { data, end: at + 4 - offset };
 }
 
 /**
  * Decode a packfile: every object resolved (deltas applied), keyed by oid, trailer verified.
  * `baseResolver` supplies thin-pack REF_DELTA bases the pack itself does not carry.
  */
-export async function resolvePack(
+export function resolvePack(
   pack: Buffer,
   baseResolver?: (oid: string) => GitObject | null,
 ): Map<string, GitObject> {
@@ -177,7 +188,7 @@ export async function resolvePack(
       offset += 20;
     }
     if (typeNum === 0 || typeNum === 5 || (typeNum > 7)) throw new Error(`bad object type ${typeNum}`);
-    const { data, end } = await inflateStreamAt(pack, offset);
+    const { data, end } = inflateStreamAt(pack, offset);
     offset += end;
     slots.push({
       kind: typeNum === 6 ? 'ofs_delta' : typeNum === 7 ? 'ref_delta' : TYPE_NAMES[typeNum],

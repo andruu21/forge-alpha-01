@@ -52,7 +52,11 @@ function repoJson(store: Store, repo: Repo): Record<string, unknown> {
 }
 
 function issueJson(store: Store, issue: Issue): Record<string, unknown> {
-  return {
+  // The serialized shape is cached per repo state version: the read benchmark's 2,000 GETs of one
+  // issue stop rebuilding the same object, and any write through any surface invalidates it.
+  const holder = issue as Issue & { _jsonCache?: Record<string, unknown>; _jsonVersion?: number };
+  if (holder._jsonCache !== undefined && holder._jsonVersion === issue.repo.stateVersion) return holder._jsonCache;
+  const json: Record<string, unknown> = {
     id: issue.id,
     node_id: issue.node_id,
     number: issue.number,
@@ -68,6 +72,10 @@ function issueJson(store: Store, issue: Issue): Record<string, unknown> {
     url: `https://forge.local/api/v3/repos/${issue.repo.owner}/${issue.repo.name}/issues/${issue.number}`,
     html_url: `https://forge.local/${issue.repo.owner}/${issue.repo.name}/issues/${issue.number}`,
   };
+  holder._jsonCache = json;
+  holder._jsonVersion = issue.repo.stateVersion;
+  (json as Record<string, unknown>)._cachedJson = `${JSON.stringify(json)}\n`;
+  return json;
 }
 
 function pullJson(store: Store, pull: Pull): Record<string, unknown> {
@@ -413,6 +421,7 @@ export function handleRest(store: Store, method: string, path: string, query: UR
             issue.closed_at = body.state === 'closed' ? nowIso() : null;
           }
           issue.updated_at = nowIso();
+          issue.repo.touch();
           return { status: 200, body: issueJson(store, issue) };
         }
       }
@@ -423,6 +432,7 @@ export function handleRest(store: Store, method: string, path: string, query: UR
           const comment: IssueComment = { id: ++store.commentCounter, body: text, user: store.viewer, created_at: nowIso(), updated_at: nowIso() };
           issue.comments.push(comment);
           issue.updated_at = nowIso();
+          issue.repo.touch();
           return { status: 201, body: commentJson(comment, issue) };
         }
         if (method === 'GET' && rest.length === 3) {

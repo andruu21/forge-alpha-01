@@ -416,7 +416,7 @@ function handleV0UploadPack(store: Store, repo: Repo, body: Buffer): Buffer {
   return Buffer.concat(frames);
 }
 
-async function handleReceivePack(store: Store, repo: Repo, body: Buffer): Promise<{ status: number; body: Buffer }> {
+function handleReceivePack(store: Store, repo: Repo, body: Buffer): { status: number; body: Buffer } {
   // Body: command pkt-lines (oid SP oid SP ref), optional capabilities on first line, flush,
   // then pack data.
   const { packets, trailing } = parsePktLines(body);
@@ -441,7 +441,7 @@ async function handleReceivePack(store: Store, repo: Repo, body: Buffer): Promis
   const packBytes = stripServiceHeader(packData);
   if (packBytes.length > 0) {
     try {
-      await store.storePack(repo, packBytes);
+      store.storePack(repo, packBytes);
     } catch {
       // A bad pack: every non-delete command fails with the standard reason.
       const report = commands.map((c) => `ng ${c.ref} missing necessary objects`);
@@ -470,7 +470,7 @@ function stripServiceHeader(body: Buffer): Buffer {
   return body;
 }
 
-export async function handleGitRequest(req: GitRequest): Promise<GitResponse | null> {
+export function handleGitRequest(req: GitRequest): GitResponse | null {
   const { store, repo, service } = req;
   if (req.isInfoRefs) {
     const v2 = req.protocolVersion === '2';
@@ -511,6 +511,6 @@ export async function handleGitRequest(req: GitRequest): Promise<GitResponse | n
     }
     return { status: 200, contentType: 'application/x-git-upload-pack-result', body: handleV0UploadPack(store, repo, req.body) };
   }
-  const result = await handleReceivePack(store, repo, req.body);
+  const result = handleReceivePack(store, repo, req.body);
   return { status: result.status, contentType: 'application/x-git-receive-pack-result', body: result.body };
 }

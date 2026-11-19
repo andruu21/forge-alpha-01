@@ -16,6 +16,13 @@ export class Repo {
   readonly labels: Label[] = [];
   nextIssueNumber = 1;
   nextPullNumber = 1;
+  /**
+   * Bumped by every mutation of this repo's REST/GraphQL-visible state. Derived-response caches
+   * (issue JSON, list JSON) key on it, so a write through any surface invalidates them: caching on
+   * a mutation hook in one surface silently missed the others.
+   */
+  stateVersion = 0;
+  touch(): void { this.stateVersion += 1; }
   idCounter = 1;
   readonly owner: string;
   readonly name: string;
@@ -344,8 +351,8 @@ export class Store {
   }
 
   /** Store a pushed pack's objects (thin-pack bases resolved from the repo). */
-  async storePack(repo: Repo, pack: Buffer): Promise<void> {
-    const resolved = await resolvePack(pack, (oid) => repo.get(oid));
+  storePack(repo: Repo, pack: Buffer): void {
+    const resolved = resolvePack(pack, (oid) => repo.get(oid));
     for (const obj of resolved.values()) repo.put(obj);
   }
 }

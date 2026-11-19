@@ -162,6 +162,7 @@ function executeOne(store: Store, op: Operation): Record<string, unknown> {
         issue.state = 'closed';
         issue.closed_at = isoNow();
         issue.updated_at = isoNow();
+        issue.repo.touch();
         data.closeIssue = { issue: issuePayload(issue, doc) };
       }
     }
@@ -177,6 +178,7 @@ function executeOne(store: Store, op: Operation): Record<string, unknown> {
         const comment = { id: ++store.commentCounter, body: text, user: store.viewer, created_at: isoNow(), updated_at: isoNow() };
         issue.comments.push(comment);
         issue.updated_at = isoNow();
+        issue.repo.touch();
         data.addComment = {
           commentEdge: { node: { id: toGlobalId('comment', `${issue.repo.owner}/${issue.repo.name}`, comment.id), body: text } },
         };
