@@ -65,10 +65,11 @@ export class Repo {
    * exchange and the ref set is unchanged between them, so this only rebuilds after a real update.
    */
   readonly advertisementCache = new Map<string, Buffer>();
+  readonly lsRefsCache = new Map<string, Buffer>();
 
   refValue(ref: string): string | null { return this.refs.get(ref) ?? null; }
-  setRef(ref: string, oid: string): void { this.refs.set(ref, oid); this.advertisementCache.clear(); }
-  deleteRef(ref: string): void { this.refs.delete(ref); this.advertisementCache.clear(); }
+  setRef(ref: string, oid: string): void { this.refs.set(ref, oid); this.advertisementCache.clear(); this.lsRefsCache.clear(); }
+  deleteRef(ref: string): void { this.refs.delete(ref); this.advertisementCache.clear(); this.lsRefsCache.clear(); }
 
   /** Resolve a ref name or sha-ish to an oid; null when unknown. */
   resolve(name: string): string | null {

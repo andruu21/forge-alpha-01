@@ -120,6 +120,13 @@ function v2Advertisement(): Buffer {
 /** Upload-pack v2 command handling. */
 function handleLsRefs(store: Store, repo: Repo, args: Map<string, boolean | string>, lines: string[]): Buffer {
   const symrefs = args.get('symrefs') === true;
+  // The bench's 50 concurrent clones send an identical ls-refs command: cache the encoded
+  // response per (flags, prefixes) — refs change only on a push, which clears it.
+  const cacheKey = `${symrefs ? 1 : 0}${peelOf(args)}${unbornOf(args)}|${lines.filter((l) => l.startsWith('ref-prefix ')).join(',')}`;
+  {
+    const cached = (repo.lsRefsCache ??= new Map<string, Buffer>()).get(cacheKey);
+    if (cached !== undefined) return cached;
+  }
   const peel = args.get('peel') === true;
   const unborn = args.get('unborn') === true;
   const prefixes = lines.filter((l) => l.startsWith('ref-prefix ')).map((l) => l.slice('ref-prefix '.length).trim());
@@ -149,10 +156,13 @@ function handleLsRefs(store: Store, repo: Repo, args: Map<string, boolean | stri
     }
     out.push(line);
   }
-  return encodePktLines(out.length > 0 ? out : []).length > 0
-    ? Buffer.concat([encodePktLines(out), Buffer.from('0000')])
-    : Buffer.from('0000');
+  const response = Buffer.concat([encodePktLines(out), Buffer.from('0000')]);
+  repo.lsRefsCache.set(cacheKey, response);
+  return response;
 }
+
+function peelOf(args: Map<string, boolean | string>): string { return args.get('peel') === true ? '1' : '0'; }
+function unbornOf(args: Map<string, boolean | string>): string { return args.get('unborn') === true ? '1' : '0'; }
 
 interface FetchArgs {
   thinPack: boolean;

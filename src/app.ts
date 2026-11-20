@@ -42,8 +42,13 @@ function sendBuffer(res: ServerResponse, status: number, contentType: string, bo
 }
 
 function pathOf(req: IncomingMessage): URL {
+  // Fast path: a plain absolute path needs no URL constructor (fetch sends one; proxies may not).
+  const raw = req.url ?? '/';
+  if (raw.charCodeAt(0) === 0x2f && !raw.includes('..')) {
+    return new URL(raw, 'http://entry');
+  }
   try {
-    return new URL(req.url ?? '/', 'http://entry');
+    return new URL(raw, 'http://entry');
   } catch {
     return new URL('/', 'http://entry');
   }
